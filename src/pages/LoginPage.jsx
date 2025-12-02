@@ -1,257 +1,246 @@
 import React, { useState } from "react";
-import RotatingText from "../components/texts/RotatingText";
-import ClickSpark from "@/components/ClickSpark";
-import RolePanelSelector from "../components/auth/RolePanelSelector"; // <- update path if needed
-import { supabase } from '../../src/supabaseClient';
-import { useNavigate } from 'react-router-dom';
-
+import { useNavigate, Link } from "react-router-dom";
+import { supabase } from "../supabaseClient";
+import { motion } from "framer-motion";
+import {
+  Mail,
+  Lock,
+  Loader2,
+  ArrowRight,
+  GraduationCap,
+  Briefcase,
+  CheckCircle2,
+} from "lucide-react";
+import heroImage from "../assets/heroImage.png";
 
 export default function LoginPage() {
-    
-    // --- STATE FOR INPUTS AND UI CONTROL ---
-    const [showPassword, setShowPassword] = useState(false);
-    const [role, setRole] = useState("student"); // "student" | "creator"
-    const [email, setEmail] = useState(""); 
-    const [password, setPassword] = useState(""); 
-    const [loading, setLoading] = useState(false); 
-    
-    // --- STATE FOR COGNITO CHALLENGES (The 2-step flow) ---
-    const [userObject, setUserObject] = useState(null); 
-    const [newPassword, setNewPassword] = useState(""); 
-    const [authChallenge, setAuthChallenge] = useState(false); 
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [role, setRole] = useState("student"); // 'student' | 'creator'
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+  });
 
-    const navigate = useNavigate();
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError(null);
+  };
 
-    // --- Core Login Logic (Step 1: Initial Submission) ---
-  // Inside LoginPage.jsx
-
-const handleLogin = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-
-    if (!email || !password) {
-        alert("Please enter both email and password.");
-        setLoading(false);
-        return;
-    }
+    setError(null);
 
     try {
-        // 1. Call Supabase Sign In API (Handles authentication and sets session cookies)
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: email,
-            password: password,
+      // 1. Sign In
+      const {
+        data: { user },
+        error: signInError,
+      } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (signInError) throw signInError;
+
+      // 2. Update Role in Metadata to match selection
+      // This ensures the ProfilePage loads the correct dashboard view.
+      if (user) {
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: { role: role },
         });
 
-        if (error) {
-            throw error;
-        }
-        
-        // 2. Retrieve the JWT Access Token and User ID
-        // Note: Supabase uses 'access_token' for the JWT sent to the backend.
-        const session = data.session;
-        const jwtToken = session.access_token;
-        const userId = session.user.id;
-        
-        // 3. Authorization Check (Client-Side, Simplified)
-        // **ASSUMPTION:** A successful login is enough to access a default dashboard.
-        // The role selected in the UI ('creator' or 'student') dictates the frontend path.
-        
-        if (role === 'creator') {
-             // For a production app, the backend (Motia) MUST verify the role based on the JWT claim.
-             console.log("INFO: Frontend redirecting as creator. Backend must verify role for user ID:", userId);
-        }
-        
-        // 4. LOG THE JWT (This is the token Motia needs to validate!)
-        console.log("✅ Supabase Sign In Successful. User ID:", userId);
-        console.log("--- JWT Access Token for Motia ---");
-        // console.log(jwtToken);
-        console.log("------------------------------------");
+        if (updateError) throw updateError;
+      }
 
-
-        // 5. Success & Redirection
-        const targetPath = (role === 'creator') ? '/teacher-dashboard' : '/';
-        navigate(targetPath);
-
-    } catch (error) {
-        console.error("Supabase Login Failed:", error);
-        // Supabase errors are simple objects
-        alert(error.message || "Login failed. Check credentials or verify email.");
+      // 3. Redirect
+      navigate("/profile");
+    } catch (err) {
+      setError(err.message);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
+  };
 
-    // --- Logic for Completing the New Password Challenge (Step 2) ---
-    const handleNewPasswordSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-
-        if (!newPassword || newPassword.length < 8) {
-            alert("New password must be at least 8 characters.");
-            setLoading(false);
-            return;
-        }
-
-        try {
-            // Use the stored user object from the initial login attempt (userObject)
-            const finalUser = await signIn({
-               username: email, // <-- CRITICAL FIX: Pass the stored email state
-            password: newPassword, // The new password is the challengeResponse
-            continueSignIn: userObject,
-            });
-            
-            // Final success check: If fully signed in, proceed to token validation
-            if (finalUser.nextStep.signInStep === 'SIGNED_IN') {
-                await completeAuthAndRedirect();
-            } else {
-                throw new Error('New password submission failed. Try logging in again.');
-            }
-
-        } catch (error) {
-            console.error("New Password Submission Failed:", error);
-            alert(error.message || "Failed to set new password.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // --- Shared Logic for Token Validation and Redirection ---
-    const completeAuthAndRedirect = async () => {
-        // 1. Retrieve the Session (now guaranteed to have tokens)
-        const session = await fetchAuthSession();
-        
-        // 2. Authorization Check (Client-Side)
-        const groups = session.tokens.accessToken.payload['cognito:groups'] || [];
-        const userIsCreator = groups.includes('Teacher') || groups.includes('Admin');
-        
-        if (role === 'creator' && !userIsCreator) {
-            throw new Error("Access Denied. You do not have creator/teacher privileges.");
-        }
-        
-        console.log(`Login successful for ${email} as ${role}`);
-
-        // 3. Success & Redirection
-        const targetPath = (role === 'creator' && userIsCreator) ? '/teacher-dashboard' : '/student-dashboard';
-        navigate(targetPath);
-    };
-
-    // -------------------------------------------------------------
-    // JSX RENDER
-    // -------------------------------------------------------------
-    return (
-        <div className="min-h-screen w-full bg-[#060606] text-white relative overflow-hidden flex">
-            {/* ... LEFT PANEL (UI) ... */}
-            
-            {/* RIGHT — LOGIN FORM */}
-            <div className="w-full lg:w-3/5 flex items-center justify-center p-8 lg:p-14 relative z-10">
-                <div className="w-full max-w-md bg-[#0C0C0C]/70 backdrop-blur-xl border border-gray-800 p-10 rounded-2xl shadow-xl">
-                    <h2 className="text-3xl font-bold">Log in to Fox Bird</h2>
-                    
-                    {/* --- CONDITIONAL FORM RENDERING --- */}
-                    {authChallenge ? (
-                        // RENDER NEW PASSWORD FORM (Step 2 UI)
-                        <form className="mt-8 space-y-5" onSubmit={handleNewPasswordSubmit}>
-                            <h3 className="text-xl font-bold text-[#FF4A1F]">New Password Required</h3>
-                            <p className="text-gray-400 text-sm">Please set a new, permanent password to continue.</p>
-                            
-                            <Input 
-                                label="New Permanent Password"
-                                id="newPassword"
-                                type="password"
-                                placeholder="Enter new password"
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                            />
-                            <ClickSpark>
-                                <button type="submit" disabled={loading} className="w-full py-3 bg-[#FF4A1F] rounded-xl">
-                                    {loading ? "Setting Password..." : "Set Password & Log In"}
-                                </button>
-                            </ClickSpark>
-                        </form>
-                    ) : (
-                        // RENDER ORIGINAL LOGIN FORM (Step 1 UI)
-                        <form className="mt-8 space-y-5" onSubmit={handleLogin}>
-                            
-                            {/* Role panels: Creator vs Student (Only visible on initial login) */}
-                            <div className="mt-6">
-                                <p className="text-xs uppercase text-gray-500 tracking-wide mb-2">
-                                    Continue as
-                                </p>
-                                <RolePanelSelector value={role} onChange={setRole} />
-                            </div>
-
-                            {/* Email Input */}
-                            <Input
-                                label="Email Address" id="email" type="email" placeholder="you@example.com"
-                                value={email} onChange={(e) => setEmail(e.target.value)} 
-                            />
-
-                            {/* Password with toggle */}
-                            <div className="flex flex-col gap-1.5">
-                                <label htmlFor="password" className="text-sm font-medium text-gray-300">Password</label>
-                                <div className="relative">
-                                    <input
-                                        id="password" type={showPassword ? "text" : "password"} placeholder="•••••••••"
-                                        className="w-full px-4 py-2.5 bg-[#0A0A0A] border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#FF4A1F]/50 pr-10"
-                                        value={password} onChange={(e) => setPassword(e.target.value)}
-                                    />
-                                    <button type="button" className="absolute inset-y-0 right-3 flex items-center text-xs text-gray-500 hover:text-gray-300" onClick={() => setShowPassword((v) => !v)}>
-                                        {showPassword ? "Hide" : "Show"}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* ... Remainder of Form UI (Remember/Forgot, etc.) ... */}
-
-                            <ClickSpark>
-                                <button type="submit" disabled={loading} className="w-full mt-2 py-3 text-black font-semibold text-lg rounded-xl bg-[#FF4A1F] hover:brightness-95 transition-all shadow-[0_0_25px_-6px_#ff4a1f]">
-                                    {loading ? "Logging In..." : (role === "creator" ? "Log in as Creator" : "Log in as Student")}
-                                </button>
-                            </ClickSpark>
-                        </form>
-                    )}
-                    {/* ... Social login and Divider ... */}
-                </div>
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] text-white flex">
+      {/* Left: Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative z-10">
+        <div className="max-w-md w-full">
+          <Link
+            to="/"
+            className="flex items-center gap-2 mb-10 text-gray-400 hover:text-white transition"
+          >
+            <div className="w-8 h-8 rounded-full bg-[#FF4A1F] flex items-center justify-center font-bold text-black text-sm">
+              FB
             </div>
+            <span className="font-semibold">Fox Bird</span>
+          </Link>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <h1 className="text-4xl font-bold mb-2">Welcome back</h1>
+            <p className="text-gray-400 mb-8">
+              Choose your role and enter your details.
+            </p>
+
+            {error && (
+              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-6">
+              {/* ROLE SELECTOR */}
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setRole("student")}
+                  className={`relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                    role === "student"
+                      ? "border-[#FF4A1F] bg-[#FF4A1F]/10 text-white"
+                      : "border-gray-800 bg-[#111] text-gray-400 hover:border-gray-700 hover:bg-[#161616]"
+                  }`}
+                >
+                  <GraduationCap size={28} className="mb-2" />
+                  <span className="font-semibold text-sm">Student</span>
+                  {role === "student" && (
+                    <div className="absolute top-2 right-2 text-[#FF4A1F]">
+                      <CheckCircle2 size={16} />
+                    </div>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRole("creator")}
+                  className={`relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                    role === "creator"
+                      ? "border-[#FF4A1F] bg-[#FF4A1F]/10 text-white"
+                      : "border-gray-800 bg-[#111] text-gray-400 hover:border-gray-700 hover:bg-[#161616]"
+                  }`}
+                >
+                  <Briefcase size={28} className="mb-2" />
+                  <span className="font-semibold text-sm">Creator</span>
+                  {role === "creator" && (
+                    <div className="absolute top-2 right-2 text-[#FF4A1F]">
+                      <CheckCircle2 size={16} />
+                    </div>
+                  )}
+                </button>
+              </div>
+
+              {/* EMAIL INPUT */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-300">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    size={20}
+                  />
+                  <input
+                    type="email"
+                    name="email"
+                    required
+                    placeholder="name@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="w-full bg-[#111] border border-gray-800 rounded-xl px-10 py-3 text-white focus:outline-none focus:border-[#FF4A1F] transition-colors placeholder:text-gray-600"
+                  />
+                </div>
+              </div>
+
+              {/* PASSWORD INPUT */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-300">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    size={20}
+                  />
+                  <input
+                    type="password"
+                    name="password"
+                    required
+                    placeholder="••••••••"
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="w-full bg-[#111] border border-gray-800 rounded-xl px-10 py-3 text-white focus:outline-none focus:border-[#FF4A1F] transition-colors placeholder:text-gray-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-800 bg-[#111] text-[#FF4A1F] focus:ring-[#FF4A1F]"
+                  />
+                  <span className="text-gray-400 group-hover:text-gray-300">
+                    Remember me
+                  </span>
+                </label>
+                <a href="#" className="text-[#FF4A1F] hover:underline">
+                  Forgot password?
+                </a>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-[#FF4A1F] hover:bg-[#E03E13] text-black font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  <>
+                    Sign In as <span className="capitalize">{role}</span>{" "}
+                    <ArrowRight size={20} />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-8 text-center text-gray-400">
+              Don't have an account?{" "}
+              <Link
+                to="/signup"
+                className="text-white font-medium hover:text-[#FF4A1F] transition-colors"
+              >
+                Sign up for free
+              </Link>
+            </p>
+          </motion.div>
         </div>
-    );
-}
+      </div>
 
-// --- Sub Components (Defined outside of LoginPage or imported) ---
-
-function Input({ label, id, placeholder, type = "text", onChange, value }) {
-    // ... Input implementation (defined in the final provided code block) ...
-    // Note: This must be defined correctly in your project.
-    return (
-        <div className="flex flex-col gap-1.5">
-            <label htmlFor={id} className="text-sm font-medium text-gray-300">{label}</label>
-            <input
-                id={id} type={type} placeholder={placeholder} onChange={onChange} value={value}
-                className="w-full px-4 py-2.5 bg-[#0A0A0A] border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#FF4A1F]/50"
-            />
+      {/* Right: Visual Side (Hidden on Mobile) */}
+      <div className="hidden lg:block w-1/2 relative overflow-hidden bg-[#111]">
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0A] via-transparent to-transparent z-10" />
+        <img
+          src={heroImage}
+          alt="Login Visual"
+          className="w-full h-full object-cover opacity-60 mix-blend-overlay"
+        />
+        <div className="absolute bottom-12 left-12 z-20 max-w-lg">
+          <h2 className="text-3xl font-bold mb-4">
+            Master new skills, faster.
+          </h2>
+          <p className="text-gray-400 text-lg">
+            Join a community of developers building the future. Get instant AI
+            feedback and ship real projects.
+          </p>
         </div>
-    );
-}
-
-// ... FeaturePoint and Divider ...
-
-function FeaturePoint({ label }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="w-2.5 h-2.5 rounded-full bg-[#FF4A1F] shadow-[0_0_10px_#ff4a1f]" />
-      <p className="text-gray-300">{label}</p>
-    </div>
-  );
-}
-
-function Divider() {
-  return (
-    <div className="flex items-center my-6">
-      <div className="w-full bg-gray-700 h-px" />
-      <span className="px-4 text-xs uppercase text-gray-500 tracking-wider">
-        OR
-      </span>
-      <div className="w-full bg-gray-700 h-px" />
+      </div>
     </div>
   );
 }
