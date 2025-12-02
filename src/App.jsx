@@ -6,6 +6,29 @@ import SignUpPage from "./pages/SignUpPage";
 import Dashboard from "./pages/Dashboard";
 import CoursePage from "./pages/CoursePage";
 
+
+// Add this configuration block to your main application entry point (e.g., _app.js)
+
+// main.jsx or index.jsx (Your App Root File)
+
+import { Amplify } from 'aws-amplify'; // <-- Simple import from top-level package
+
+// 1. Configuration Block (Must execute first)
+Amplify.configure({
+  Auth: {
+    // V6 REQUIRES the nested 'Cognito' object
+    Cognito: {
+      userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID,
+      
+      // Property name changed from userPoolWebClientId to userPoolClientId
+      userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID, 
+      
+      region: import.meta.env.VITE_AWS_REGION,
+      // Note: identityPoolId is optional, omitted for simplicity here
+    }
+  }
+});
+// ... rest of the file ...
 function AnimatedRoutes() {
   const location = useLocation();
   return (

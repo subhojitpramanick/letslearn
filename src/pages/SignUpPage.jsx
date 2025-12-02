@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import RotatingText from "../components/texts/RotatingText";
 import ClickSpark from "@/components/ClickSpark";
 import RolePanelSelector from "../components/auth/RolePanelSelector"; // <- update path if needed
-
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../src/supabaseClient';
 /**
  * FoxBird — Signup Page
  * Full-screen, professional, dark-themed onboarding page.
@@ -12,7 +13,14 @@ import RolePanelSelector from "../components/auth/RolePanelSelector"; // <- upda
 export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("student"); // "student" | "creator"
-
+  const [fullName, setFullName] = useState("");
+    const [email, setEmail] = useState("");
+    
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [isSignedUp, setIsSignedUp] = useState(false); // To toggle confirmation screen
+    const [confirmationCode, setConfirmationCode] = useState("");
+    const navigate = useNavigate();
   const passwordStrength = () => {
     if (!password) return "empty";
     if (password.length < 6) return "weak";
@@ -20,12 +28,80 @@ export default function SignUpPage() {
     return "strong";
   };
 
-  // (optional) handle submit later – now it's just UI
-  const handleSubmit = (e) => {
+  
+  // Inside SignUpPage component
+
+// Inside SignUpPage.jsx
+
+const handleSignUp = async (e) => {
     e.preventDefault();
-    // send role + form fields to backend when ready
-    // e.g. { fullName, email, password, role, ... }
-  };
+    setLoading(true);
+
+    if (password !== confirmPassword) {
+        alert("Passwords do not match.");
+        setLoading(false);
+        return;
+    }
+
+    try {
+        const userRole = role === 'creator' ? 'Teacher' : 'Student';
+
+        // 1. Call Supabase Sign-Up API
+        const { data, error } = await supabase.auth.signUp({
+            email: email,
+            password: password,
+            options: {
+                // Pass metadata needed for the SQL trigger to assign the role
+                data: {
+                    full_name: fullName,
+                    user_role: userRole,
+                }
+            }
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        // 2. Success: Supabase sends a confirmation email
+        console.log("Supabase Sign Up Data:", data);
+        
+        // Supabase requires email verification, so we toggle the UI to prompt for checking email
+        setIsSignedUp(true); 
+        alert("Success! A confirmation link has been sent to your email. Please click the link to continue.");
+
+    } catch (error) {
+        console.error("Supabase Sign Up Failed:", error);
+        // Supabase errors are simple objects
+        alert(`Sign Up Failed: ${error.message}`);
+    } finally {
+        setLoading(false);
+    }
+};
+// Inside SignUpPage component
+
+const handleConfirmSignUp = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+        // 1. Call Cognito API to confirm the user account
+        await confirmSignUp({
+            username: email,
+            confirmationCode: confirmationCode,
+        });
+
+        // 2. Success: Account is now confirmed, redirect to login
+        alert("Account successfully confirmed! Please log in.");
+        navigate('/login');
+        
+    } catch (error) {
+        console.error("Confirmation Failed:", error);
+        alert(error.message || "Invalid confirmation code. Please try again.");
+    } finally {
+        setLoading(false);
+    }
+};
 
   return (
     <div className="min-h-screen w-full bg-[#060606] text-white relative overflow-hidden flex">
@@ -119,9 +195,9 @@ export default function SignUpPage() {
             <RolePanelSelector value={role} onChange={setRole} />
           </div>
 
-          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+          <form className="mt-8 space-y-5" onSubmit={isSignedUp ? handleConfirmSignUp : handleSignUp}>
             {/* Name */}
-            <Input label="Full Name" id="name" placeholder="John Carter" />
+            <Input label="Full Name" id="name" placeholder="John Carter" onChange={(e) => setFullName(e.target.value)}/>
 
             {/* Email */}
             <Input
@@ -129,6 +205,7 @@ export default function SignUpPage() {
               id="email"
               type="email"
               placeholder="you@example.com"
+              onChange={(e) => setEmail(e.target.value)}
             />
 
             {/* Role (extra context about user profile) */}
@@ -168,7 +245,9 @@ export default function SignUpPage() {
               id="confirmPassword"
               type="password"
               placeholder="•••••••••"
-            />
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />  
+            
 
             {/* Social GitHub (Optional) */}
             <Input
