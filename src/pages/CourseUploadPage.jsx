@@ -1,6 +1,7 @@
-import React, { useState, useRef } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useRef, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "../supabaseClient";
 import CourseCard from "../components/CourseCard.jsx";
 import {
   Plus,
@@ -17,6 +18,10 @@ import {
 } from "lucide-react";
 
 export default function CourseUploadPage() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [showAccessDenied, setShowAccessDenied] = useState(false); // State for custom alert
+
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
@@ -29,7 +34,7 @@ export default function CourseUploadPage() {
 
   const thumbnailInputRef = useRef(null);
 
-  // Curriculum State: 'videoUrl' replaces 'file'
+  // Curriculum State
   const [curriculum, setCurriculum] = useState([
     {
       id: 1,
@@ -45,7 +50,40 @@ export default function CourseUploadPage() {
     },
   ]);
 
-  // --- Handlers (Standard inputs) ---
+  // --- Auth Check ---
+  useEffect(() => {
+    const checkCreatorAccess = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          navigate("/login");
+          return;
+        }
+
+        // Check if role is 'creator'
+        const role = user.user_metadata?.role;
+        if (role !== "creator") {
+          // Show custom alert instead of browser alert
+          setShowAccessDenied(true);
+          // Optional: Auto-redirect after a few seconds
+          setTimeout(() => navigate("/profile"), 3000);
+          return;
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        navigate("/login");
+      }
+    };
+
+    checkCreatorAccess();
+  }, [navigate]);
+
+  // --- Handlers ---
   const handleTitleChange = (value) => {
     setTitle(value);
     setSlug(
@@ -125,7 +163,7 @@ export default function CourseUploadPage() {
       description,
       banner,
       level,
-      curriculum, // Now contains YouTube links
+      curriculum,
     };
     console.log("Submitting:", courseData);
     alert("Bet. Course data ready to ship! 🚀");
@@ -140,6 +178,71 @@ export default function CourseUploadPage() {
     imageUrl: banner,
     isTrending: false,
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#060606] flex items-center justify-center text-white relative">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#FF4A1F]"></div>
+
+        {/* ACCESS DENIED ALERT */}
+        <AnimatePresence>
+          {showAccessDenied && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="absolute top-10 left-1/2 -translate-x-1/2 z-50"
+            >
+              <div className="flex items-center justify-between max-w-sm w-full bg-red-600/20 border border-red-500/50 text-red-500 px-4 py-3 rounded-lg shadow-xl backdrop-blur-md">
+                <div className="flex items-center">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M10 14.167q.354 0 .593-.24.24-.24.24-.594a.8.8 0 0 0-.24-.593.8.8 0 0 0-.594-.24.8.8 0 0 0-.593.24.8.8 0 0 0-.24.593q0 .354.24.594t.593.24m-.834-3.334h1.667v-5H9.166zm.833 7.5a8.1 8.1 0 0 1-3.25-.656 8.4 8.4 0 0 1-2.645-1.781 8.4 8.4 0 0 1-1.782-2.646A8.1 8.1 0 0 1 1.666 10q0-1.73.656-3.25a8.4 8.4 0 0 1 1.782-2.646 8.4 8.4 0 0 1 2.645-1.781A8.1 8.1 0 0 1 10 1.667q1.73 0 3.25.656a8.4 8.4 0 0 1 2.646 1.781 8.4 8.4 0 0 1 1.781 2.646 8.1 8.1 0 0 1 .657 3.25 8.1 8.1 0 0 1-.657 3.25 8.4 8.4 0 0 1-1.78 2.646 8.4 8.4 0 0 1-2.647 1.781 8.1 8.1 0 0 1-3.25.656"
+                      fill="currentColor"
+                    />
+                  </svg>
+                  <div className="ml-3">
+                    <p className="text-sm font-bold">Access Denied</p>
+                    <p className="text-xs opacity-90">
+                      Only creators can access the studio.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAccessDenied(false)}
+                  type="button"
+                  aria-label="close"
+                  className="active:scale-90 transition-all ml-4 cursor-pointer text-red-500 hover:text-red-400"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M15 5 5 15M5 5l10 10"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#060606] text-white selection:bg-[#FF4A1F] selection:text-black font-sans">
@@ -167,7 +270,7 @@ export default function CourseUploadPage() {
             onClick={handleSubmit}
             className="px-6 py-2 bg-[#FF4A1F] text-black font-bold rounded-full hover:brightness-110 hover:scale-105 active:scale-95 transition-all text-sm shadow-[0_0_15px_rgba(255,74,31,0.4)]"
           >
-            Publish 🚀
+            Ship It 🚀
           </button>
         </div>
       </div>
