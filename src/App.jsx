@@ -1,4 +1,3 @@
-// src/App.jsx
 import React from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,20 +7,9 @@ import SignUpPage from "./pages/SignUpPage";
 import Dashboard from "./pages/Dashboard";
 import CoursePage from "./pages/CoursePage";
 import ProfilePage from "./pages/ProfilePage";
-import CourseUploadPage from "./pages/CourseUploadPage"; // ⬅️ NEW
-
-// AWS Amplify
-import { Amplify } from "aws-amplify";
-
-Amplify.configure({
-  Auth: {
-    Cognito: {
-      userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID,
-      userPoolClientId: import.meta.env.VITE_COGNITO_CLIENT_ID,
-      region: import.meta.env.VITE_AWS_REGION,
-    },
-  },
-});
+import CourseUploadPage from "./pages/CourseUploadPage";
+import AddQuestionPage from "./pages/AddQuestionPage"; // ⬅️ Teacher Page
+import QuestionListPage from "./pages/QuestionList"; // ⬅️ NEW: Student Page
 
 const pageMotionProps = {
   initial: { opacity: 0, y: 10 },
@@ -86,12 +74,32 @@ function AnimatedRoutes() {
           }
         />
 
-        {/* ⬇️ NEW: Creator Course Upload Page */}
+        {/* Creator Course Upload Page */}
         <Route
           path="/courses-upload"
           element={
             <motion.div {...pageMotionProps}>
               <CourseUploadPage />
+            </motion.div>
+          }
+        />
+
+        {/* ⬇️ NEW: Teacher Add Question Route */}
+        <Route
+          path="/teacher/add-question"
+          element={
+            <motion.div {...pageMotionProps}>
+              <AddQuestionPage />
+            </motion.div>
+          }
+        />
+
+        {/* ⬇️ NEW: Student Question List Route */}
+        <Route
+          path="/student/questions"
+          element={
+            <motion.div {...pageMotionProps}>
+              <QuestionListPage />
             </motion.div>
           }
         />
