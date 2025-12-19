@@ -17,6 +17,7 @@ import { supabase } from "../supabaseClient";
 export default function FoxBirdLanding() {
   // --- AUTH STATE ---
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState(null);
 
   // --- EXISTING DATA STATE ---
   const [courses, setCourses] = useState([
@@ -108,6 +109,7 @@ export default function FoxBirdLanding() {
     // 1. Check active session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session);
+      setUserRole(extractRole(session));
     });
 
     // 2. Listen for changes (login, logout, auto-refresh)
@@ -115,6 +117,7 @@ export default function FoxBirdLanding() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
+      setUserRole(extractRole(session));
     });
 
     // 3. Simulate loading for 1.5s
@@ -177,7 +180,18 @@ export default function FoxBirdLanding() {
             <a href="#pricing" className="hover:text-white">
               Pricing
             </a>
+            {/* ⬇️ NEW: ROLE-BASED LINKS */}
+            {isLoggedIn && userRole === 'Student' && (
+              <a href="/student/questions" className="text-[#FF4A1F] font-bold hover:brightness-125">
+                Problems
+              </a>
+            )}
 
+            {isLoggedIn && userRole === 'Teacher' && (
+              <a href="/teacher/add-question" className="text-[#FF4A1F] font-bold hover:brightness-125">
+                Contribute
+              </a>
+            )}
             {/* CONDITIONAL AUTH BUTTONS */}
             {!isLoggedIn ? (
               <>

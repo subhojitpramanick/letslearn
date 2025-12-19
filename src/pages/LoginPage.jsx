@@ -28,41 +28,47 @@ export default function LoginPage() {
     setError(null);
   };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setLoading(true);
+  setError(null);
 
-    try {
-      // 1. Sign In
-      const {
-        data: { user },
-        error: signInError,
-      } = await supabase.auth.signInWithPassword({
+  try {
+    const { data, error } =
+      await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
       });
 
-      if (signInError) throw signInError;
+    if (error) throw error;
 
-      // 2. Update Role in Metadata to match selection
-      // This ensures the ProfilePage loads the correct dashboard view.
-      if (user) {
-        const { error: updateError } = await supabase.auth.updateUser({
-          data: { role: role },
-        });
+    const { user, session } = data;
 
-        if (updateError) throw updateError;
-      }
+    // 🔐 JWT (Access Token)
+    const accessToken = session?.access_token;
 
-      // 3. Redirect
-      navigate("/profile");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    console.log("JWT (access_token):", accessToken);
+    console.log("Refresh Token:", session?.refresh_token);
+    console.log("Expires At:", session?.expires_at);
+
+    // Update role metadata
+    if (user) {
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { role },
+      });
+
+      if (updateError) throw updateError;
     }
-  };
+
+    navigate("/profile");
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white flex">
