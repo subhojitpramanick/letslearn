@@ -8,8 +8,8 @@ import Dashboard from "./pages/Dashboard";
 import CoursePage from "./pages/CoursePage";
 import ProfilePage from "./pages/ProfilePage";
 import CourseUploadPage from "./pages/CourseUploadPage";
-import AddQuestionPage from "./pages/AddQuestionPage"; // ⬅️ Teacher Page
-import QuestionListPage from "./pages/QuestionList"; // ⬅️ NEW: Student Page
+import AddQuestionPage from "./pages/AddQuestionPage"; 
+import QuestionListPage from "./pages/QuestionList"; 
 
 const pageMotionProps = {
   initial: { opacity: 0, y: 10 },
@@ -24,85 +24,21 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {/* Landing / Dashboard */}
-        <Route
-          path="/"
-          element={
-            <motion.div {...pageMotionProps}>
-              <Dashboard />
-            </motion.div>
-          }
-        />
+        <Route path="/" element={<motion.div {...pageMotionProps}><Dashboard /></motion.div>} />
+        <Route path="/signup" element={<motion.div {...pageMotionProps}><SignUpPage /></motion.div>} />
+        <Route path="/login" element={<motion.div {...pageMotionProps}><LoginPage /></motion.div>} />
+        <Route path="/course/:slug" element={<motion.div {...pageMotionProps}><CoursePage /></motion.div>} />
+        
+        {/* Profile & Student Dashboard Routes */}
+        <Route path="/profile" element={<motion.div {...pageMotionProps}><ProfilePage /></motion.div>} />
+        <Route path="/student/assignments" element={<motion.div {...pageMotionProps}><ProfilePage defaultTab="assignments" /></motion.div>} />
+        <Route path="/student/mock-interview" element={<motion.div {...pageMotionProps}><ProfilePage defaultTab="mock-interview" /></motion.div>} />
+        <Route path="/student/courses" element={<motion.div {...pageMotionProps}><ProfilePage defaultTab="courses" /></motion.div>} />
+        <Route path="/student/questions" element={<motion.div {...pageMotionProps}><QuestionListPage /></motion.div>} />
 
-        {/* Signup */}
-        <Route
-          path="/signup"
-          element={
-            <motion.div {...pageMotionProps}>
-              <SignUpPage />
-            </motion.div>
-          }
-        />
-
-        {/* Login */}
-        <Route
-          path="/login"
-          element={
-            <motion.div {...pageMotionProps}>
-              <LoginPage />
-            </motion.div>
-          }
-        />
-
-        {/* Course Detail */}
-        <Route
-          path="/course/:slug"
-          element={
-            <motion.div {...pageMotionProps}>
-              <CoursePage />
-            </motion.div>
-          }
-        />
-
-        {/* Profile */}
-        <Route
-          path="/profile"
-          element={
-            <motion.div {...pageMotionProps}>
-              <ProfilePage />
-            </motion.div>
-          }
-        />
-
-        {/* Creator Course Upload Page */}
-        <Route
-          path="/courses-upload"
-          element={
-            <motion.div {...pageMotionProps}>
-              <CourseUploadPage />
-            </motion.div>
-          }
-        />
-
-        {/* ⬇️ NEW: Teacher Add Question Route */}
-        <Route
-          path="/teacher/add-question"
-          element={
-            <motion.div {...pageMotionProps}>
-              <AddQuestionPage />
-            </motion.div>
-          }
-        />
-
-        {/* ⬇️ NEW: Student Question List Route */}
-        <Route
-          path="/student/questions"
-          element={
-            <motion.div {...pageMotionProps}>
-              <QuestionListPage />
-            </motion.div>
-          }
-        />
+        {/* Teacher Routes */}
+        <Route path="/courses-upload" element={<motion.div {...pageMotionProps}><CourseUploadPage /></motion.div>} />
+        <Route path="/teacher/add-question" element={<motion.div {...pageMotionProps}><AddQuestionPage /></motion.div>} />
       </Routes>
     </AnimatePresence>
   );
