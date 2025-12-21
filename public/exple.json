@@ -1,0 +1,46 @@
+{
+  "sets": [
+    {
+      "setName": "Basic Communication Practice",
+      "reading": [
+        "Clear communication is essential in both academic and professional environments. It helps avoid misunderstandings and improves collaboration."
+      ],
+      "repetition": [
+        {
+          "text": "Please submit the report by Friday.",
+          "audioUrl": "/audio/rep_01.mp3"
+        },
+        {
+          "text": "Please submit the report by Friday.",
+          "audioUrl": "/audio/rep_01_repeat.mp3"
+        }
+      ],
+      "comprehension": {
+        "story": "Rahul was working on a team project where deadlines were strict. One team member failed to submit their work on time, causing delays. Rahul decided to clearly communicate expectations and deadlines in advance. As a result, the team completed the project successfully and on time.",
+        "storyAudioUrl": "/audio/comp_01.mp3",
+        "questions": [
+          {
+            "question": "What problem did Rahul face in the project?",
+            "options": [
+              "Lack of technical skills",
+              "Missed deadlines by a team member",
+              "Poor project planning",
+              "Client dissatisfaction"
+            ],
+            "correctAnswer": "Missed deadlines by a team member"
+          },
+          {
+            "question": "What solution did Rahul apply?",
+            "options": [
+              "He worked alone",
+              "He extended the deadline",
+              "He clearly communicated expectations",
+              "He canceled the project"
+            ],
+            "correctAnswer": "He clearly communicated expectations"
+          }
+        ]
+      }
+    }
+  ]
+}
