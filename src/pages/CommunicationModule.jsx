@@ -11,11 +11,10 @@ const CommunicationModule = ({ user, sessionId, onComplete, onCancel }) => {
   const [results, setResults] = useState({ reading: [], repetition: [], comprehension: [] });
   const [practiceSet, setPracticeSet] = useState(null);
   
-  // Strict State Management
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [playbackStatus, setPlaybackStatus] = useState("idle"); // idle, playing, ready
+  const [playbackStatus, setPlaybackStatus] = useState("idle"); 
 
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -59,7 +58,6 @@ const CommunicationModule = ({ user, sessionId, onComplete, onCancel }) => {
       return;
     }
 
-    // STRICT: Stop any current audio or recording
     stopAudioPlayback();
     if (isRecording) stopRecording();
 
@@ -159,11 +157,10 @@ const CommunicationModule = ({ user, sessionId, onComplete, onCancel }) => {
     setStage(next);
   };
 
-  // 5. MCQ Logic (Comprehension) - FIXED JSON ACCESS
+  // 5. MCQ Logic
   const handleMCQAnswer = (option) => {
     if (playbackStatus === "playing") stopAudioPlayback();
 
-    // FIX: Access .questions directly (removed [0])
     const questions = practiceSet.comprehension.questions;
     const qData = questions[currentIndex];
     const isCorrect = option === qData.correctAnswer;
@@ -180,91 +177,82 @@ const CommunicationModule = ({ user, sessionId, onComplete, onCancel }) => {
     }
   };
 
-const handleSubmit = async () => {
-  setIsSubmitting(true);
+  // ✅ 6. UPDATED SUBMIT LOGIC (Uses UPDATE instead of INSERT)
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
 
-  try {
-    const { data: { session: authSession } } = await supabase.auth.getSession();
-    const token = authSession?.access_token;
+    try {
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      const token = authSession?.access_token;
 
-    // 1. Create Session
-    const { data: newSession, error: createError } = await supabase
-        .from('mock_interview_sessions')
-        .insert([{
-            user_id: user.id,
-            user_email: user.email,
-            status: 'processing',
-            communication_data: results
-        }])
-        .select()
-        .single();
+      // A. UPDATE existing session with raw audio data
+      const { error: updateError } = await supabase
+          .from('mock_interview_sessions')
+          .update({ communication_data: results }) 
+          .eq('id', sessionId); // Update the active session
 
-    if (createError) throw createError;
+      if (updateError) throw updateError;
 
-    // 2. Trigger Analysis
-    const payload = {
-        sessionId: newSession.id,
-        userId: user.id,
-        userEmail: user.email,
-        results: results
-    };
+      // B. Trigger Analysis (Backend Process)
+      const payload = {
+          sessionId: sessionId, 
+          userId: user.id,
+          userEmail: user.email,
+          results: results
+      };
 
-    const baseUrl = import.meta.env.VITE_MOTIA_URL;
-    await fetch(`${baseUrl}/api/student/analyze`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+      const baseUrl = import.meta.env.VITE_MOTIA_URL;
+      await fetch(`${baseUrl}/api/student/analyze`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
 
-    // 3. POLL FOR RESULTS (The New Logic)
-    // We check the DB every 2 seconds to see if 'status' becomes 'completed'
-    let attempts = 0;
-    const maxAttempts = 30; // Wait up to 60 seconds (30 * 2s)
+      // C. POLL FOR RESULTS
+      // We check if communication_score is updated (score > 0)
+      let attempts = 0;
+      const maxAttempts = 24; // ~2 minutes max
 
-    const pollInterval = setInterval(async () => {
-        attempts++;
-        
-        const { data: updatedSession, error: pollError } = await supabase
-            .from('mock_interview_sessions')
-            .select('status, communication_score')
-            .eq('id', newSession.id)
-            .single();
+      const pollInterval = setInterval(async () => {
+          attempts++;
+          
+          const { data: updatedSession, error: pollError } = await supabase
+              .from('mock_interview_sessions')
+              .select('communication_score')
+              .eq('id', sessionId)
+              .single();
 
-        if (pollError) {
-            clearInterval(pollInterval);
-            setIsSubmitting(false);
-            alert("Error checking results. Please refresh.");
-            return;
-        }
+          if (pollError) {
+              clearInterval(pollInterval);
+              setIsSubmitting(false);
+              return;
+          }
 
-        // STOP CONDITION: Analysis is done!
-        if (updatedSession.status === 'completed') {
-            clearInterval(pollInterval);
-            setIsSubmitting(false);
-            
-            // NOW we have the real score (e.g., 55)
-            // Default to 0 if null, but NEVER 75
-            onComplete(updatedSession.communication_score || 0); 
-        }
+          // SUCCESS CONDITION: We have a score!
+          if (updatedSession?.communication_score > 0) {
+              clearInterval(pollInterval);
+              setIsSubmitting(false);
+              onComplete(updatedSession.communication_score); 
+          }
 
-        // TIMEOUT CONDITION
-        if (attempts >= maxAttempts) {
-            clearInterval(pollInterval);
-            setIsSubmitting(false);
-            alert("Analysis timed out. Please check your dashboard later.");
-        }
+          // TIMEOUT CONDITION
+          if (attempts >= maxAttempts) {
+              clearInterval(pollInterval);
+              setIsSubmitting(false);
+              alert("Analysis is taking longer than usual. Please check back later.");
+          }
 
-    }, 5000); // Check every 5 seconds
+      }, 5000); // Check every 5 seconds
 
-  } catch (err) {
-    console.error("Submission Error:", err);
-    alert(err.message || "Failed to submit analysis");
-    setIsSubmitting(false);
-  }
-};
+    } catch (err) {
+      console.error("Submission Error:", err);
+      alert(err.message || "Failed to submit analysis");
+      setIsSubmitting(false);
+    }
+  };
 
   if (stage === "loading") return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-[#FF4A1F]" /></div>;
 
@@ -311,21 +299,19 @@ const handleSubmit = async () => {
           <RecordUI 
             isRecording={isRecording} isUploading={isUploading} 
             onStart={startRecording} onStop={stopRecording} 
-            disabled={playbackStatus === "idle" || playbackStatus === "playing"} // Strict: Must finish listening
+            disabled={playbackStatus === "idle" || playbackStatus === "playing"} 
           />
         </div>
       )}
 
-      {/* STAGE: COMPREHENSION (FIXED) */}
+      {/* STAGE: COMPREHENSION */}
       {stage === "comprehension" && practiceSet.comprehension && (
         <div className="space-y-8">
-          {/* Story Audio Player */}
           <div className="p-6 bg-blue-900/10 border border-blue-500/20 rounded-2xl text-center">
             <h4 className="text-blue-400 font-bold mb-3 flex items-center justify-center gap-2 text-xs uppercase tracking-widest">
               <BookOpen size={16}/> Story Context
             </h4>
             <button 
-              // FIX: Removed [0] because comprehension is an object in your JSON
               onClick={() => playAIVoice(practiceSet.comprehension.story)}
               disabled={playbackStatus === "playing"}
               className={`mb-2 p-3 rounded-full transition-all ${playbackStatus === "playing" ? "bg-blue-500 text-white animate-pulse" : "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"}`}
@@ -335,9 +321,7 @@ const handleSubmit = async () => {
             <p className="text-xs text-gray-500">{playbackStatus === "playing" ? "Playing Story..." : "Play Story Audio"}</p>
           </div>
 
-          {/* MCQ Section */}
           <div className="space-y-4">
-             {/* FIX: Removed [0] from access path */}
              <h3 className="text-xl font-bold text-center">
                {practiceSet.comprehension.questions[currentIndex].question}
              </h3>
@@ -374,7 +358,6 @@ const handleSubmit = async () => {
   );
 };
 
-// Reusable Record Button
 const RecordUI = ({ isRecording, isUploading, onStart, onStop, disabled }) => (
   <button 
     onClick={isRecording ? onStop : onStart} 
