@@ -1,28 +1,26 @@
 import React, { useState, useEffect } from "react";
-import { Mic, BookOpen, Code, Award, CheckCircle, Lock, Trophy, Play, Clock, AlertCircle } from "lucide-react";
+import { Mic, BookOpen, Code, Award, Play, Lock, Shuffle, Key, Loader2, CheckCircle, Trophy, Clock } from "lucide-react";
+import { supabase } from "../supabaseClient";
+
+// Import Modules
 import CommunicationModule from "./CommunicationModule"; 
 import TechnicalModule from "./TechnicalModule"; 
 import CodingModule from "./CodingModule"; 
-import { supabase } from "../supabaseClient";
 
-const MockInterviewView = ({ user }) => {
-  // --- STATE MANAGEMENT ---
-  const [activeSessionId, setActiveSessionId] = useState(null); // ID of current run
-  const [sessionStage, setSessionStage] = useState("intro"); // intro, communication, technical, coding, report
+export default function MockInterviewView({ user }) {
+  // --- STATE ---
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [sessionData, setSessionData] = useState(null); // The Full Practice Set Content
+  const [stage, setStage] = useState("lobby"); // lobby, dashboard, communication, technical, coding
   
-  // Active Session Scores (Reset to 0/null on every new session)
-  const [commScore, setCommScore] = useState(0);
-  const [techPassed, setTechPassed] = useState(false);
-  const [codingScore, setCodingScore] = useState(null);
-  
-  // History Data
+  // Scores
+  const [scores, setScores] = useState({ comm: 0, tech: 0, coding: 0 });
+  const [unlocked, setUnlocked] = useState({ tech: false, coding: false });
+  const [loading, setLoading] = useState(false);
+  const [accessKey, setAccessKey] = useState("");
   const [history, setHistory] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
 
-  // Constants
-  const COMM_CUTOFF = 60; 
-
-  // --- 1. FETCH HISTORY ONLY (Do not resume) ---
+  // Fetch History on Load
   useEffect(() => {
     const fetchHistory = async () => {
       const { data } = await supabase
@@ -30,295 +28,292 @@ const MockInterviewView = ({ user }) => {
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-
-      if (data) setHistory(data);
-      setLoadingHistory(false);
+      if(data) setHistory(data);
     };
-    if (user) fetchHistory();
-  }, [user, activeSessionId]); // Refetch history when a new session is created/finished
+    if(user) fetchHistory();
+  }, [user, activeSessionId]);
 
-  // --- 2. START NEW SESSION LOGIC ---
-  const handleStartNewSession = async () => {
-    setLoadingHistory(true);
+  // --- LOBBY ACTIONS ---
+  const startRandomSet = async () => {
+    setLoading(true);
     try {
-      // Create a fresh row in DB
+      // Fetch ANY public set
+      const { data, error } = await supabase
+        .from('practice_sets')
+        .select('*')
+        .is('access_key', null)
+        .limit(20);
+      
+      if(error || !data.length) throw new Error("No public practice sets found. Please ask a teacher to create one.");
+      
+      const randomSet = data[Math.floor(Math.random() * data.length)];
+      initializeSession(randomSet);
+    } catch(err) {
+      alert(err.message);
+      setLoading(false);
+    }
+  };
+
+  const startProtectedSet = async () => {
+    if(!accessKey) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('practice_sets')
+        .select('*')
+        .eq('access_key', accessKey.trim())
+        .single();
+      
+      if(error || !data) throw new Error("Invalid Key or Set not found.");
+      initializeSession(data);
+    } catch(err) {
+      alert(err.message);
+      setLoading(false);
+    }
+  };
+
+  const initializeSession = async (practiceSet) => {
+    try {
+      // 1. Create DB Session
       const { data, error } = await supabase
         .from('mock_interview_sessions')
         .insert([{
           user_id: user.id,
           user_email: user.email,
           status: 'in_progress',
-          communication_score: 0,
-          technical_score: 0,
-          coding_score: null, 
-          technical_passed: false
+          // Store which set was used for analytics later
+          metadata: { set_id: practiceSet.id, title: practiceSet.title } 
         }])
         .select()
         .single();
 
-      if (error) throw error;
+      if(error) throw error;
 
-      // Reset Local State for the New Session
+      // 2. Set Local State
       setActiveSessionId(data.id);
-      setCommScore(0);
-      setTechPassed(false);
-      setCodingScore(null);
-      
-      // Start at Dashboard View of the new session
-      setSessionStage("dashboard");
-    } catch (err) {
-      console.error("Error starting session:", err);
-      alert("Could not start new session.");
+      setSessionData(practiceSet.data); // The JSONB blob { communication, technical, coding }
+      setStage("dashboard");
+      setScores({ comm: 0, tech: 0, coding: 0 });
+      setUnlocked({ tech: false, coding: false });
+    } catch(err) {
+      console.error(err);
+      alert("Failed to start session.");
     } finally {
-      setLoadingHistory(false);
+      setLoading(false);
     }
   };
 
-  // --- 3. COMPLETION HANDLERS (Update DB & Local State) ---
-  
-  const handleCommComplete = async (score) => {
-    // Update DB
+  // --- MODULE COMPLETION HANDLERS ---
+  const onCommFinish = async (score) => {
     await supabase.from('mock_interview_sessions')
       .update({ communication_score: score })
       .eq('id', activeSessionId);
-
-    setCommScore(score);
-    setSessionStage("dashboard");
+    
+    setScores(prev => ({...prev, comm: score}));
+    if(score >= 60) setUnlocked(prev => ({...prev, tech: true}));
+    setStage("dashboard");
   };
 
-  const handleTechComplete = async (passed) => {
-    // Update DB
+  const onTechFinish = async (passed, score) => {
     await supabase.from('mock_interview_sessions')
-      .update({ technical_passed: passed }) // Ensure you added this column or map it
+      .update({ technical_score: score, technical_passed: passed })
       .eq('id', activeSessionId);
 
-    setTechPassed(passed);
-    setSessionStage("dashboard");
+    setScores(prev => ({...prev, tech: score}));
+    if(passed) setUnlocked(prev => ({...prev, coding: true}));
+    setStage("dashboard");
   };
 
-  const handleCodingComplete = async (score) => {
-    // Update DB & Mark Complete
+  const onCodingFinish = async (score) => {
     await supabase.from('mock_interview_sessions')
-      .update({ 
-        coding_score: score, 
-        status: 'completed' 
-      })
+      .update({ coding_score: score, status: 'completed' })
       .eq('id', activeSessionId);
 
-    setCodingScore(score);
-    setSessionStage("dashboard");
+    setScores(prev => ({...prev, coding: score}));
+    setStage("dashboard");
   };
 
-  // --- 4. EXIT / TERMINATE SESSION ---
-  // If user clicks "Exit", we just clear the active ID. 
-  // The row remains in DB as 'in_progress' (effectively terminated/abandoned).
   const handleExit = () => {
-    if(confirm("Are you sure? This session will be terminated and saved as a previous record.")) {
+    if(confirm("Exit session? Progress will be saved.")) {
+      setStage("lobby");
       setActiveSessionId(null);
-      setSessionStage("intro");
+      setSessionData(null);
     }
   };
 
-  // --- RENDER: MODULES ---
-  // Pass the activeSessionId so modules know where to save data if needed
-  if (sessionStage === "communication") {
-    return <CommunicationModule user={user} sessionId={activeSessionId} onComplete={handleCommComplete} onCancel={() => setSessionStage("dashboard")} />;
-  }
-  if (sessionStage === "technical") {
-    return <TechnicalModule user={user} sessionId={activeSessionId} onComplete={handleTechComplete} onCancel={() => setSessionStage("dashboard")} />;
-  }
-  if (sessionStage === "coding") {
-    return <CodingModule user={user} sessionId={activeSessionId} onComplete={handleCodingComplete} onCancel={() => setSessionStage("dashboard")} />;
-  }
+  // --- RENDERING ---
 
-  // --- LOGIC: UNLOCKS ---
-  const isTechnicalUnlocked = commScore >= COMM_CUTOFF;
-  const isCodingUnlocked = techPassed;
-  const isAllComplete = codingScore !== null;
-
-  // --- RENDER: MAIN VIEW ---
-  return (
-    <div className="space-y-8 animate-in fade-in duration-500 min-h-screen">
-      
-      {/* 1. INTRO VIEW (HISTORY + START BUTTON) */}
-      {!activeSessionId && (
-        <div className="space-y-8">
-           {/* Hero */}
-           <div className="bg-[#111] border border-gray-800 rounded-2xl p-8 flex flex-col items-center text-center shadow-xl">
-              <div className="p-4 bg-[#FF4A1F]/10 rounded-full text-[#FF4A1F] mb-4">
-                <Trophy size={48} />
-              </div>
-              <h1 className="text-3xl font-bold text-white">Mock Interview Suite</h1>
-              <p className="text-gray-400 mt-2 max-w-lg mb-8">
-                Test your skills in a real-world environment. Complete all 3 rounds (Communication, Technical, Coding) to get your certification score.
-              </p>
-              <button 
-                onClick={handleStartNewSession}
-                className="bg-[#FF4A1F] text-black px-8 py-4 rounded-full font-bold text-lg hover:scale-105 transition-transform flex items-center gap-2 shadow-lg shadow-orange-500/20"
-              >
-                <Play size={20} fill="black" /> Start New Interview
-              </button>
-           </div>
-
-           {/* History Table */}
-           <div className="bg-[#0A0A0A] rounded-2xl border border-gray-800 p-6">
-              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <Clock className="text-gray-500" /> Previous Records
-              </h3>
-              
-              {loadingHistory ? (
-                <div className="text-center text-gray-500 py-10">Loading records...</div>
-              ) : history.length === 0 ? (
-                <div className="text-center text-gray-600 py-10 italic">No previous interview attempts found.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="text-gray-500 border-b border-gray-800 text-sm uppercase tracking-wider">
-                        <th className="pb-4">Date</th>
-                        <th className="pb-4">Status</th>
-                        <th className="pb-4 text-center">Comm.</th>
-                        <th className="pb-4 text-center">Tech</th>
-                        <th className="pb-4 text-center">Coding</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-gray-300">
-                      {history.map((session) => (
-                        <tr key={session.id} className="border-b border-gray-800/50 hover:bg-white/5 transition-colors">
-                          <td className="py-4 text-sm font-mono text-gray-400">
-                            {new Date(session.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="py-4">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${
-                              session.status === 'completed' ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'
-                            }`}>
-                              {session.status === 'completed' ? 'COMPLETED' : 'TERMINATED'}
-                            </span>
-                          </td>
-                          <td className="py-4 text-center">{session.communication_score || '-'}%</td>
-                          <td className="py-4 text-center">
-                            {session.technical_passed ? <CheckCircle size={16} className="mx-auto text-green-500"/> : <span className="text-gray-600">-</span>}
-                          </td>
-                          <td className="py-4 text-center">{session.coding_score !== null ? session.coding_score + '%' : '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-           </div>
-        </div>
-      )}
-
-      {/* 2. ACTIVE SESSION VIEW (LOCKED/UNLOCKED STAGES) */}
-      {activeSessionId && (
-        <div className="animate-in slide-in-from-right-4 duration-500">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse"/> Live Session
-            </h2>
-            <button onClick={handleExit} className="text-xs text-red-500 hover:underline">
-              Terminate Session
-            </button>
-          </div>
-
-          {/* Progress Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <RoundCard 
-              step="1" title="Communication" icon={Mic} 
-              score={commScore} 
-              // Active if session is live, Completed if we have a score >= cutoff
-              status={commScore >= COMM_CUTOFF ? "completed" : "active"} 
-            />
-            <RoundCard 
-              step="2" title="Technical MCQ" icon={BookOpen} 
-              // Locked unless Communication Passed
-              status={techPassed ? "completed" : isTechnicalUnlocked ? "active" : "locked"} 
-            />
-            <RoundCard 
-              step="3" title="Coding Test" icon={Code} 
-              score={codingScore || 0}
-              // Locked unless Technical Passed
-              status={isAllComplete ? "completed" : isCodingUnlocked ? "active" : "locked"} 
-            />
-          </div>
-
-          {/* Context Action Box */}
-          <div className={`border rounded-2xl p-8 flex flex-col md:flex-row items-center gap-6 shadow-xl transition-all ${isAllComplete ? 'bg-gradient-to-r from-green-900/20 to-black border-green-900' : 'bg-[#111] border-gray-800'}`}>
-            
-            <div className={`p-5 rounded-full ${isAllComplete ? 'bg-green-500 text-black' : 'bg-[#FF4A1F]/10 text-[#FF4A1F]'}`}>
-              {isAllComplete ? <Trophy size={48} /> : <Award size={48} />}
-            </div>
-            
-            <div className="flex-1 text-center md:text-left">
-              <h2 className="text-2xl font-bold">
-                {isAllComplete ? "Congratulations! Session Completed." : 
-                 !isTechnicalUnlocked ? "Step 1: Communication Round" :
-                 !techPassed ? "Step 2: Technical Assessment" : "Step 3: Coding Challenge"}
-              </h2>
-              <p className="text-gray-400 mt-2 max-w-lg">
-                {isAllComplete 
-                   ? "You have successfully passed all rounds. Your scores have been recorded. You can now terminate this session."
-                   : !isTechnicalUnlocked 
-                      ? `You must score at least ${COMM_CUTOFF}% in Communication to unlock the Technical round.`
-                      : !techPassed
-                         ? "Pass the Technical MCQ section to verify your knowledge before Coding."
-                         : "Solve the final coding problem to complete your interview."}
-              </p>
-            </div>
-
-            {/* DYNAMIC BUTTONS */}
-            {!isAllComplete ? (
-               <button 
-                 onClick={() => {
-                    if (!isTechnicalUnlocked) setSessionStage("communication");
-                    else if (!techPassed) setSessionStage("technical");
-                    else setSessionStage("coding");
-                 }}
-                 // DISABLED STATE IF LOCKED
-                 className="bg-[#FF4A1F] text-black px-10 py-4 rounded-full font-bold hover:scale-105 transition-all shadow-lg shadow-orange-500/20"
-               >
-                  {!isTechnicalUnlocked ? "Start Communication" : !techPassed ? "Start Technical" : "Start Coding"}
-               </button>
-            ) : (
-                <button 
-                  onClick={handleExit} 
-                  className="bg-green-500 text-black px-10 py-4 rounded-full font-bold hover:bg-green-400 transition-colors shadow-lg shadow-green-500/20"
-                >
-                  Return to History
+  if (stage === "lobby") {
+    return (
+      <div className="max-w-6xl mx-auto p-8 space-y-12 animate-in fade-in">
+        {/* Intro */}
+        <div className="bg-[#111] border border-gray-800 rounded-2xl p-10 text-center relative overflow-hidden">
+           <div className="relative z-10">
+             <h1 className="text-4xl font-bold text-white mb-4">Mock Interview Portal</h1>
+             <p className="text-gray-400 mb-8 max-w-xl mx-auto">
+               Master your interview skills with our 3-stage assessment engine. Practice Communication, Technical Knowledge, and Coding.
+             </p>
+             
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+                {/* Random Card */}
+                <button onClick={startRandomSet} disabled={loading} className="bg-black border border-gray-800 p-6 rounded-2xl hover:border-[#FF4A1F] transition-all group text-left">
+                   <div className="flex items-center gap-4 mb-2">
+                     <div className="p-3 bg-blue-900/20 text-blue-500 rounded-lg group-hover:scale-110 transition-transform">
+                       {loading ? <Loader2 className="animate-spin"/> : <Shuffle size={24}/>}
+                     </div>
+                     <span className="font-bold text-white text-lg">Random Mock</span>
+                   </div>
+                   <p className="text-sm text-gray-500">Practice with a randomly generated set from our public library.</p>
                 </button>
-            )}
-          </div>
+
+                {/* Key Card */}
+                <div className="bg-black border border-gray-800 p-6 rounded-2xl text-left">
+                   <div className="flex items-center gap-4 mb-4">
+                     <div className="p-3 bg-yellow-900/20 text-yellow-500 rounded-lg">
+                       <Key size={24}/>
+                     </div>
+                     <span className="font-bold text-white text-lg">Classroom Code</span>
+                   </div>
+                   <div className="flex gap-2">
+                     <input 
+                       value={accessKey}
+                       onChange={e => setAccessKey(e.target.value)}
+                       className="bg-[#111] border border-gray-700 rounded px-3 py-2 text-white text-sm w-full focus:border-yellow-500 outline-none"
+                       placeholder="ENTER-CODE"
+                     />
+                     <button 
+                       onClick={startProtectedSet}
+                       disabled={loading || !accessKey}
+                       className="bg-yellow-600 text-black font-bold px-3 rounded hover:bg-yellow-500 disabled:opacity-50"
+                     >
+                       GO
+                     </button>
+                   </div>
+                </div>
+             </div>
+           </div>
         </div>
-      )}
-    </div>
-  );
-};
 
-// --- SUB COMPONENTS ---
-
-const RoundCard = ({ step, title, icon: Icon, status, score }) => {
-  const isLocked = status === "locked";
-  const isDone = status === "completed";
-
-  return (
-    <div className={`p-6 rounded-2xl border transition-all ${isLocked ? "opacity-40 grayscale" : "bg-[#111] border-gray-800 shadow-md"} ${isDone ? "border-green-900/50 bg-green-900/5" : ""}`}>
-      <div className="flex justify-between items-center mb-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${isDone ? "bg-green-500 text-black" : "bg-gray-800 text-gray-400"}`}>
-          {isDone ? <CheckCircle size={20} /> : step}
+        {/* History */}
+        <div className="bg-[#0A0A0A] border border-gray-800 rounded-2xl p-6">
+           <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><Clock size={20}/> Previous Attempts</h3>
+           <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-400">
+                <thead>
+                  <tr className="border-b border-gray-800 text-gray-500 uppercase text-xs">
+                    <th className="py-3">Date</th>
+                    <th className="py-3">Status</th>
+                    <th className="py-3">Comm.</th>
+                    <th className="py-3">Tech</th>
+                    <th className="py-3">Coding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map(h => (
+                    <tr key={h.id} className="border-b border-gray-800/50">
+                      <td className="py-3">{new Date(h.created_at).toLocaleDateString()}</td>
+                      <td className="py-3"><span className={`px-2 py-1 rounded text-xs font-bold ${h.status === 'completed' ? 'bg-green-900/30 text-green-500' : 'bg-red-900/30 text-red-500'}`}>{h.status}</span></td>
+                      <td className="py-3">{h.communication_score}%</td>
+                      <td className="py-3">{h.technical_passed ? 'Pass' : 'Fail'}</td>
+                      <td className="py-3">{h.coding_score || '-'}%</td>
+                    </tr>
+                  ))}
+                  {history.length === 0 && <tr><td colSpan="5" className="py-8 text-center italic">No history found.</td></tr>}
+                </tbody>
+              </table>
+           </div>
         </div>
-        {!isLocked && (score !== null && score !== undefined && score !== 0) && (
-            <span className={`font-mono text-xl ${isDone ? "text-green-500" : "text-[#FF4A1F]"}`}>{score}%</span>
-        )}
       </div>
-      <h4 className="font-bold text-lg flex items-center gap-2">
-        <Icon size={20} className={isLocked ? "text-gray-500" : isDone ? "text-green-500" : "text-[#FF4A1F]"} /> {title}
-      </h4>
-      <p className="text-xs text-gray-500 mt-2 uppercase tracking-tighter">
-        {isLocked ? <span className="flex items-center gap-1"><Lock size={12}/> Locked</span> : isDone ? "Passed" : "Unlocked"}
-      </p>
-    </div>
-  );
-};
+    );
+  }
 
-export default MockInterviewView;
+  // Dashboard View (Between Rounds)
+  if (stage === "dashboard") {
+    return (
+      <div className="max-w-5xl mx-auto p-6 animate-in fade-in">
+        <div className="flex justify-between items-center mb-8">
+           <div>
+             <h2 className="text-2xl font-bold text-white">Live Session</h2>
+             <span className="text-xs text-gray-500">ID: {activeSessionId}</span>
+           </div>
+           <button onClick={handleExit} className="text-red-500 text-sm hover:underline">Exit Session</button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           {/* Comm Card */}
+           <DashboardCard 
+             title="Communication" 
+             icon={Mic} 
+             status={scores.comm > 0 ? "done" : "active"}
+             score={scores.comm}
+             onClick={() => setStage("communication")}
+             locked={false} 
+           />
+           {/* Tech Card */}
+           <DashboardCard 
+             title="Technical" 
+             icon={BookOpen} 
+             status={scores.tech > 0 ? "done" : unlocked.tech ? "active" : "locked"}
+             score={scores.tech}
+             onClick={() => setStage("technical")}
+             locked={!unlocked.tech}
+           />
+           {/* Coding Card */}
+           <DashboardCard 
+             title="Coding" 
+             icon={Code} 
+             status={scores.coding > 0 ? "done" : unlocked.coding ? "active" : "locked"}
+             score={scores.coding}
+             onClick={() => setStage("coding")}
+             locked={!unlocked.coding}
+           />
+        </div>
+      </div>
+    );
+  }
+
+  // Module Views (Injecting the specific data from the Set)
+  if (stage === "communication") {
+    return <CommunicationModule 
+             user={user} 
+             sessionId={activeSessionId} 
+             onComplete={onCommFinish} 
+             onCancel={() => setStage("dashboard")}
+             customData={sessionData.communication} // <--- PASSING DATA HERE
+           />;
+  }
+  if (stage === "technical") {
+    return <TechnicalModule 
+             user={user} 
+             sessionId={activeSessionId} 
+             onComplete={onTechFinish} 
+             onCancel={() => setStage("dashboard")}
+             questions={sessionData.technical} // <--- PASSING DATA HERE
+           />;
+  }
+  if (stage === "coding") {
+    return <CodingModule 
+             user={user} 
+             sessionId={activeSessionId} 
+             onComplete={onCodingFinish} 
+             onCancel={() => setStage("dashboard")}
+             problems={sessionData.coding} // <--- PASSING DATA HERE
+           />;
+  }
+
+  return <div>Error: Unknown Stage</div>;
+}
+
+// Helper Card
+const DashboardCard = ({ title, icon: Icon, status, score, onClick, locked }) => (
+  <div onClick={!locked ? onClick : null} className={`p-6 rounded-2xl border transition-all ${locked ? 'bg-[#111] border-gray-800 opacity-50 cursor-not-allowed' : 'bg-black border-gray-700 hover:border-[#FF4A1F] cursor-pointer'}`}>
+    <div className="flex justify-between mb-4">
+      <Icon className={locked ? "text-gray-600" : "text-[#FF4A1F]"} size={24}/>
+      {status === 'done' && <span className="text-green-500 font-mono font-bold">{score}%</span>}
+    </div>
+    <h3 className="text-lg font-bold text-white">{title}</h3>
+    <p className="text-xs text-gray-500 mt-2 uppercase flex items-center gap-2">
+      {locked ? <><Lock size={12}/> Locked</> : status === 'done' ? <><CheckCircle size={12}/> Completed</> : "Start Now"}
+    </p>
+  </div>
+);
